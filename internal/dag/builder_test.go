@@ -16,6 +16,7 @@ package dag
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -28,8 +29,8 @@ import (
 )
 
 func TestDAGInsert(t *testing.T) {
-	// The DAG is senstive to ordering, adding an ingress, then a service,
-	// should have the same result as adding a sevice, then an ingress.
+	// The DAG is sensitive to ordering, adding an ingress, then a service,
+	// should have the same result as adding a service, then an ingress.
 
 	i1 := &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -63,6 +64,21 @@ func TestDAGInsert(t *testing.T) {
 			}},
 		},
 	}
+
+	// i2a is missing a http key from the spec.rule.
+	// see issue 606
+	i2a := &v1beta1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kuard",
+			Namespace: "default",
+		},
+		Spec: v1beta1.IngressSpec{
+			Rules: []v1beta1.IngressRule{{
+				Host: "test1.test.com",
+			}},
+		},
+	}
+
 	// i3 is similar to i2 but includes a hostname on the ingress rule
 	i3 := &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -101,7 +117,7 @@ func TestDAGInsert(t *testing.T) {
 			}},
 		},
 	}
-	// i6 contains two named vhosts which point to the same sevice
+	// i6 contains two named vhosts which point to the same service
 	// one of those has TLS
 	i6 := &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -655,6 +671,154 @@ func TestDAGInsert(t *testing.T) {
 		},
 	}
 
+	// ir6 has TLS and does not specify min tls version
+	ir6 := &ingressroutev1.IngressRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example-com",
+			Namespace: "default",
+		},
+		Spec: ingressroutev1.IngressRouteSpec{
+			VirtualHost: &ingressroutev1.VirtualHost{
+				Fqdn: "foo.com",
+				TLS: &ingressroutev1.TLS{
+					SecretName: "secret",
+				},
+			},
+			Routes: []ingressroutev1.Route{{
+				Match: "/",
+				Services: []ingressroutev1.Service{{
+					Name: "kuard",
+					Port: 8080,
+				}},
+			}},
+		},
+	}
+
+	// ir7 has TLS and specifies min tls version of 1.2
+	ir7 := &ingressroutev1.IngressRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example-com",
+			Namespace: "default",
+		},
+		Spec: ingressroutev1.IngressRouteSpec{
+			VirtualHost: &ingressroutev1.VirtualHost{
+				Fqdn: "foo.com",
+				TLS: &ingressroutev1.TLS{
+					SecretName:             "secret",
+					MinimumProtocolVersion: "1.2",
+				},
+			},
+			Routes: []ingressroutev1.Route{{
+				Match: "/",
+				Services: []ingressroutev1.Service{{
+					Name: "kuard",
+					Port: 8080,
+				}},
+			}},
+		},
+	}
+
+	// ir8 has TLS and specifies min tls version of 1.3
+	ir8 := &ingressroutev1.IngressRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example-com",
+			Namespace: "default",
+		},
+		Spec: ingressroutev1.IngressRouteSpec{
+			VirtualHost: &ingressroutev1.VirtualHost{
+				Fqdn: "foo.com",
+				TLS: &ingressroutev1.TLS{
+					SecretName:             "secret",
+					MinimumProtocolVersion: "1.3",
+				},
+			},
+			Routes: []ingressroutev1.Route{{
+				Match: "/",
+				Services: []ingressroutev1.Service{{
+					Name: "kuard",
+					Port: 8080,
+				}},
+			}},
+		},
+	}
+
+	// ir9 has TLS and specifies an invalid min tls version of 0.9999
+	ir9 := &ingressroutev1.IngressRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example-com",
+			Namespace: "default",
+		},
+		Spec: ingressroutev1.IngressRouteSpec{
+			VirtualHost: &ingressroutev1.VirtualHost{
+				Fqdn: "foo.com",
+				TLS: &ingressroutev1.TLS{
+					SecretName:             "secret",
+					MinimumProtocolVersion: "0.9999",
+				},
+			},
+			Routes: []ingressroutev1.Route{{
+				Match: "/",
+				Services: []ingressroutev1.Service{{
+					Name: "kuard",
+					Port: 8080,
+				}},
+			}},
+		},
+	}
+
+	// ir10 has a websocket route
+	ir10 := &ingressroutev1.IngressRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example-com",
+			Namespace: "default",
+		},
+		Spec: ingressroutev1.IngressRouteSpec{
+			VirtualHost: &ingressroutev1.VirtualHost{
+				Fqdn: "example.com",
+			},
+			Routes: []ingressroutev1.Route{{
+				Match: "/",
+				Services: []ingressroutev1.Service{{
+					Name: "kuard",
+					Port: 8080,
+				}},
+			}, {
+				Match:            "/websocket",
+				EnableWebsockets: true,
+				Services: []ingressroutev1.Service{{
+					Name: "kuard",
+					Port: 8080,
+				}},
+			}},
+		},
+	}
+
+	ir11 := &ingressroutev1.IngressRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example-com",
+			Namespace: "default",
+		},
+		Spec: ingressroutev1.IngressRouteSpec{
+			VirtualHost: &ingressroutev1.VirtualHost{
+				Fqdn: "example.com",
+				Aliases: []string{
+					"foo.com",
+					"bar.com",
+				},
+				TLS: &ingressroutev1.TLS{
+					SecretName: "secret",
+				},
+			},
+			Routes: []ingressroutev1.Route{{
+				Match: "/",
+				Services: []ingressroutev1.Service{{
+					Name: "kuard",
+					Port: 8080,
+				}},
+			}},
+		},
+	}
+
 	s5 := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "blog-admin",
@@ -791,6 +955,12 @@ func TestDAGInsert(t *testing.T) {
 					),
 				},
 			},
+		},
+		"insert ingress with missing spec.rule.http key": {
+			objs: []interface{}{
+				i2a,
+			},
+			want: []Vertex{},
 		},
 		"insert ingress w/ host name and single backend": {
 			objs: []interface{}{
@@ -1455,6 +1625,84 @@ func TestDAGInsert(t *testing.T) {
 					),
 				}},
 		},
+		"insert ingressroute with websocket route": {
+			objs: []interface{}{
+				ir10, s1,
+			},
+			want: []Vertex{
+				&VirtualHost{
+					Port: 80,
+					host: "example.com",
+					routes: routemap(
+						route("/", ir10, servicemap(
+							&Service{
+								Object:      s1,
+								ServicePort: &s1.Spec.Ports[0],
+							},
+						)),
+						&Route{
+							path:   "/websocket",
+							Object: ir10,
+							services: servicemap(
+								&Service{
+									Object:      s1,
+									ServicePort: &s1.Spec.Ports[0],
+								},
+							),
+							Websocket: true,
+						},
+					),
+				}},
+		},
+		"insert ingressroute with aliases": {
+			objs: []interface{}{
+				ir11, sec1, s1,
+			},
+			want: []Vertex{
+				&VirtualHost{
+					Port: 80,
+					host: "example.com",
+					aliases: []string{
+						"foo.com",
+						"bar.com",
+					},
+					routes: routemap(
+						&Route{
+							path:   "/",
+							Object: ir11,
+							services: servicemap(
+								&Service{
+									Object:      s1,
+									ServicePort: &s1.Spec.Ports[0],
+								},
+							),
+						},
+					),
+				}, &SecureVirtualHost{
+					Port:            443,
+					MinProtoVersion: auth.TlsParameters_TLSv1_1,
+					host:            "example.com",
+					aliases: []string{
+						"foo.com",
+						"bar.com",
+					},
+					routes: routemap(
+						&Route{
+							path:   "/",
+							Object: ir11,
+							services: servicemap(
+								&Service{
+									Object:      s1,
+									ServicePort: &s1.Spec.Ports[0],
+								},
+							),
+						},
+					),
+					secret: &Secret{
+						object: sec1,
+					},
+				}},
+		},
 		"insert ingressroute and service": {
 			objs: []interface{}{
 				ir1, s1,
@@ -1471,6 +1719,142 @@ func TestDAGInsert(t *testing.T) {
 							},
 						)),
 					),
+				}},
+		},
+		"insert ingressroute without tls version": {
+			objs: []interface{}{
+				ir6, s1, sec1,
+			},
+			want: []Vertex{
+				&VirtualHost{
+					Port: 80,
+					host: "foo.com",
+					routes: routemap(
+						route("/", ir6, servicemap(
+							&Service{
+								Object:      s1,
+								ServicePort: &s1.Spec.Ports[0],
+							},
+						)),
+					),
+				},
+				&SecureVirtualHost{
+					Port:            443,
+					MinProtoVersion: auth.TlsParameters_TLSv1_1,
+					host:            "foo.com",
+					routes: routemap(
+						route("/", ir6, servicemap(
+							&Service{
+								Object:      s1,
+								ServicePort: &s1.Spec.Ports[0],
+							},
+						)),
+					),
+					secret: &Secret{
+						object: sec1,
+					},
+				}},
+		},
+		"insert ingressroute with tls version 1.2": {
+			objs: []interface{}{
+				ir7, s1, sec1,
+			},
+			want: []Vertex{
+				&VirtualHost{
+					Port: 80,
+					host: "foo.com",
+					routes: routemap(
+						route("/", ir7, servicemap(
+							&Service{
+								Object:      s1,
+								ServicePort: &s1.Spec.Ports[0],
+							},
+						)),
+					),
+				},
+				&SecureVirtualHost{
+					Port:            443,
+					MinProtoVersion: auth.TlsParameters_TLSv1_2,
+					host:            "foo.com",
+					routes: routemap(
+						route("/", ir7, servicemap(
+							&Service{
+								Object:      s1,
+								ServicePort: &s1.Spec.Ports[0],
+							},
+						)),
+					),
+					secret: &Secret{
+						object: sec1,
+					},
+				}},
+		},
+		"insert ingressroute with tls version 1.3": {
+			objs: []interface{}{
+				ir8, s1, sec1,
+			},
+			want: []Vertex{
+				&VirtualHost{
+					Port: 80,
+					host: "foo.com",
+					routes: routemap(
+						route("/", ir8, servicemap(
+							&Service{
+								Object:      s1,
+								ServicePort: &s1.Spec.Ports[0],
+							},
+						)),
+					),
+				},
+				&SecureVirtualHost{
+					Port:            443,
+					MinProtoVersion: auth.TlsParameters_TLSv1_3,
+					host:            "foo.com",
+					routes: routemap(
+						route("/", ir8, servicemap(
+							&Service{
+								Object:      s1,
+								ServicePort: &s1.Spec.Ports[0],
+							},
+						)),
+					),
+					secret: &Secret{
+						object: sec1,
+					},
+				}},
+		},
+		"insert ingressroute with invalid tls version": {
+			objs: []interface{}{
+				ir9, s1, sec1,
+			},
+			want: []Vertex{
+				&VirtualHost{
+					Port: 80,
+					host: "foo.com",
+					routes: routemap(
+						route("/", ir9, servicemap(
+							&Service{
+								Object:      s1,
+								ServicePort: &s1.Spec.Ports[0],
+							},
+						)),
+					),
+				},
+				&SecureVirtualHost{
+					Port:            443,
+					MinProtoVersion: auth.TlsParameters_TLSv1_1,
+					host:            "foo.com",
+					routes: routemap(
+						route("/", ir9, servicemap(
+							&Service{
+								Object:      s1,
+								ServicePort: &s1.Spec.Ports[0],
+							},
+						)),
+					),
+					secret: &Secret{
+						object: sec1,
+					},
 				}},
 		},
 		"insert ingressroute referencing two backends, one missing": {
@@ -1810,7 +2194,7 @@ func TestDAGInsert(t *testing.T) {
 			for _, o := range tc.objs {
 				b.Insert(o)
 			}
-			dag := b.Compute()
+			dag := b.Build()
 
 			got := make(map[hostport]Vertex)
 			dag.Visit(func(v Vertex) {
@@ -1839,14 +2223,9 @@ func TestDAGInsert(t *testing.T) {
 	}
 }
 
-type hostport struct {
-	host string
-	port int
-}
-
 func TestDAGRemove(t *testing.T) {
-	// The DAG is senstive to ordering, removing an ingress, then a service,
-	// has a different effect than removing a sevice, then an ingress.
+	// The DAG is sensitive to ordering, removing an ingress, then a service,
+	// has a different effect than removing a service, then an ingress.
 
 	i1 := &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1897,7 +2276,7 @@ func TestDAGRemove(t *testing.T) {
 			}},
 		},
 	}
-	// i6 contains two named vhosts which point to the same sevice
+	// i6 contains two named vhosts which point to the same service
 	// one of those has TLS
 	i6 := &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -2530,7 +2909,7 @@ func TestDAGRemove(t *testing.T) {
 			for _, o := range tc.remove {
 				b.Remove(o)
 			}
-			dag := b.Compute()
+			dag := b.Build()
 
 			got := make(map[hostport]Vertex)
 			dag.Visit(func(v Vertex) {
@@ -2561,11 +2940,11 @@ func TestDAGRemove(t *testing.T) {
 }
 
 func (v *VirtualHost) String() string {
-	return fmt.Sprintf("host: %v:%d {routes: %v}", v.FQDN(), v.Port, v.routes)
+	return fmt.Sprintf("host: %v:%d {routes: %v, aliases: %#v}", v.FQDN(), v.Port, v.routes, v.aliases)
 }
 
 func (s *SecureVirtualHost) String() string {
-	return fmt.Sprintf("secure host: %v:%d {routes: %v, secret: %v}", s.FQDN(), s.Port, s.routes, s.secret)
+	return fmt.Sprintf("secure host: %v:%d {routes: %v, secret: %v, aliases: %#v}", s.FQDN(), s.Port, s.routes, s.secret, s.aliases)
 }
 
 func (r *Route) String() string {
@@ -2604,7 +2983,7 @@ func secretdata(cert, key string) map[string][]byte {
 	}
 }
 
-func TestServiceMapLookup(t *testing.T) {
+func TestBuilderLookupService(t *testing.T) {
 	s1 := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kuard",
@@ -2628,7 +3007,7 @@ func TestServiceMapLookup(t *testing.T) {
 		port intstr.IntOrString
 		want *Service
 	}{
-		"lookup sevice by port number": {
+		"lookup service by port number": {
 			meta: meta{name: "service1", namespace: "default"},
 			port: intstr.FromInt(8080),
 			want: &Service{
@@ -2664,8 +3043,14 @@ func TestServiceMapLookup(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			sm := serviceMap{services: services}
-			got := sm.lookup(tc.meta, tc.port)
+			b := builder{
+				source: &Builder{
+					KubernetesCache: KubernetesCache{
+						services: services,
+					},
+				},
+			}
+			got := b.lookupService(tc.meta, tc.port)
 			if !reflect.DeepEqual(tc.want, got) {
 				t.Fatalf("expected:\n%+v\ngot:\n%+v", tc.want, got)
 			}
@@ -2717,7 +3102,7 @@ func TestDAGIngressRouteCycle(t *testing.T) {
 	var b Builder
 	b.Insert(ir2)
 	b.Insert(ir1)
-	dag := b.Compute()
+	dag := b.Build()
 
 	got := make(map[hostport]*VirtualHost)
 	dag.Visit(func(v Vertex) {
@@ -2760,7 +3145,7 @@ func TestDAGIngressRouteCycleSelfEdge(t *testing.T) {
 
 	var b Builder
 	b.Insert(ir1)
-	dag := b.Compute()
+	dag := b.Build()
 
 	got := make(map[hostport]*VirtualHost)
 	dag.Visit(func(v Vertex) {
@@ -2798,7 +3183,7 @@ func TestDAGIngressRouteDelegatesToNonExistent(t *testing.T) {
 
 	var b Builder
 	b.Insert(ir1)
-	dag := b.Compute()
+	dag := b.Build()
 
 	got := make(map[hostport]*VirtualHost)
 	dag.Visit(func(v Vertex) {
@@ -2851,7 +3236,7 @@ func TestDAGIngressRouteDelegatePrefixDoesntMatch(t *testing.T) {
 	var b Builder
 	b.Insert(ir2)
 	b.Insert(ir1)
-	dag := b.Compute()
+	dag := b.Build()
 
 	got := make(map[hostport]*VirtualHost)
 	dag.Visit(func(v Vertex) {
@@ -2953,12 +3338,15 @@ func TestDAGRootNamespaces(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			var b Builder
-			b.IngressRouteRootNamespaces = tc.rootNamespaces
+			b := Builder{
+				KubernetesCache: KubernetesCache{
+					IngressRouteRootNamespaces: tc.rootNamespaces,
+				},
+			}
 			for _, o := range tc.objs {
 				b.Insert(o)
 			}
-			dag := b.Compute()
+			dag := b.Build()
 
 			var count int
 			dag.Visit(func(v Vertex) {
@@ -3016,7 +3404,7 @@ func TestDAGIngressRouteDelegatePrefixMatchesStringPrefixButNotPathPrefix(t *tes
 	var b Builder
 	b.Insert(ir2)
 	b.Insert(ir1)
-	dag := b.Compute()
+	dag := b.Build()
 
 	got := make(map[hostport]*VirtualHost)
 	dag.Visit(func(v Vertex) {
@@ -3469,14 +3857,17 @@ func TestDAGIngressRouteStatus(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			var b Builder
-			b.IngressRouteRootNamespaces = []string{"roots"}
+			b := Builder{
+				KubernetesCache: KubernetesCache{
+					IngressRouteRootNamespaces: []string{"roots"},
+				},
+			}
 			for _, o := range tc.objs {
 				b.Insert(o)
 			}
-			got := b.Compute().Statuses()
+			got := b.Build().Statuses()
 			if len(tc.want) != len(got) {
-				t.Fatalf("expected %d statuses, but got %d", len(tc.want), len(got))
+				t.Fatalf("expected:\n%v\ngot\n%v", tc.want, got)
 			}
 
 			for _, ex := range tc.want {
@@ -3490,6 +3881,196 @@ func TestDAGIngressRouteStatus(t *testing.T) {
 				if !found {
 					t.Fatalf("expected to find:\n%v\nbut did not find it in:\n%v", ex, got)
 				}
+			}
+		})
+	}
+}
+
+func TestDAGIngressRouteUniqueFQDNs(t *testing.T) {
+	ir1 := &ingressroutev1.IngressRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example-com",
+			Namespace: "default",
+		},
+		Spec: ingressroutev1.IngressRouteSpec{
+			VirtualHost: &ingressroutev1.VirtualHost{
+				Fqdn: "example.com",
+			},
+			Routes: []ingressroutev1.Route{{
+				Match: "/",
+				Services: []ingressroutev1.Service{{
+					Name: "kuard",
+					Port: 8080,
+				}},
+			}},
+		},
+	}
+
+	// ir2 reuses the fqdn used in ir1
+	ir2 := &ingressroutev1.IngressRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "other-example",
+			Namespace: "default",
+		},
+		Spec: ingressroutev1.IngressRouteSpec{
+			VirtualHost: &ingressroutev1.VirtualHost{
+				Fqdn: "example.com",
+			},
+			Routes: []ingressroutev1.Route{{
+				Match: "/",
+				Services: []ingressroutev1.Service{{
+					Name: "kuard",
+					Port: 8080,
+				}},
+			}},
+		},
+	}
+
+	tests := map[string]struct {
+		objs       []interface{}
+		want       []Vertex
+		wantStatus []Status
+	}{
+		"insert ingressroute": {
+			objs: []interface{}{
+				ir1,
+			},
+			want: []Vertex{
+				&VirtualHost{
+					Port: 80,
+					host: "example.com",
+					routes: routemap(
+						route("/", ir1),
+					),
+				},
+			},
+			wantStatus: []Status{
+				{
+					Object:      ir1,
+					Status:      StatusValid,
+					Description: "valid IngressRoute",
+					Vhost:       "example.com",
+				},
+			},
+		},
+		"insert conflicting ingressroutes due to fqdn reuse": {
+			objs: []interface{}{
+				ir1, ir2,
+			},
+			want: []Vertex{},
+			wantStatus: []Status{
+				{
+					Object:      ir1,
+					Status:      StatusInvalid,
+					Description: `fqdn "example.com" is used in multiple IngressRoutes: default/example-com, default/other-example`,
+					Vhost:       "example.com",
+				},
+				{
+					Object:      ir2,
+					Status:      StatusInvalid,
+					Description: `fqdn "example.com" is used in multiple IngressRoutes: default/example-com, default/other-example`,
+					Vhost:       "example.com",
+				},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var b Builder
+			for _, o := range tc.objs {
+				b.Insert(o)
+			}
+			dag := b.Build()
+
+			got := make(map[hostport]Vertex)
+			dag.Visit(func(v Vertex) {
+				switch v := v.(type) {
+				case *VirtualHost:
+					got[hostport{host: v.FQDN(), port: v.Port}] = v
+				case *SecureVirtualHost:
+					got[hostport{host: v.FQDN(), port: v.Port}] = v
+				}
+			})
+
+			want := make(map[hostport]Vertex)
+			for _, v := range tc.want {
+				switch v := v.(type) {
+				case *VirtualHost:
+					want[hostport{host: v.FQDN(), port: v.Port}] = v
+				case *SecureVirtualHost:
+					want[hostport{host: v.FQDN(), port: v.Port}] = v
+				}
+			}
+
+			if !reflect.DeepEqual(want, got) {
+				t.Fatal("expected:\n", want, "\ngot:\n", got)
+			}
+
+			gotStatus := dag.statuses
+			sort.Stable(statusByNamespaceAndName(gotStatus))
+			if !reflect.DeepEqual(tc.wantStatus, gotStatus) {
+				t.Fatal("expected:\n", tc.wantStatus, "\ngot:\n", dag.statuses)
+			}
+		})
+	}
+}
+
+func TestHttpPaths(t *testing.T) {
+	tests := map[string]struct {
+		rule v1beta1.IngressRule
+		want []v1beta1.HTTPIngressPath
+	}{
+		"zero value": {
+			rule: v1beta1.IngressRule{},
+			want: nil,
+		},
+		"empty paths": {
+			rule: v1beta1.IngressRule{
+				IngressRuleValue: v1beta1.IngressRuleValue{
+					HTTP: &v1beta1.HTTPIngressRuleValue{},
+				},
+			},
+			want: nil,
+		},
+		"several paths": {
+			rule: v1beta1.IngressRule{
+				IngressRuleValue: v1beta1.IngressRuleValue{
+					HTTP: &v1beta1.HTTPIngressRuleValue{
+						Paths: []v1beta1.HTTPIngressPath{{
+							Backend: v1beta1.IngressBackend{
+								ServiceName: "kuard",
+								ServicePort: intstr.FromString("http"),
+							},
+						}, {
+							Path: "/kuarder",
+							Backend: v1beta1.IngressBackend{
+								ServiceName: "kuarder",
+								ServicePort: intstr.FromInt(8080),
+							},
+						}},
+					},
+				},
+			},
+			want: []v1beta1.HTTPIngressPath{{
+				Backend: v1beta1.IngressBackend{
+					ServiceName: "kuard",
+					ServicePort: intstr.FromString("http"),
+				},
+			}, {
+				Path: "/kuarder",
+				Backend: v1beta1.IngressBackend{ServiceName: "kuarder",
+					ServicePort: intstr.FromInt(8080),
+				},
+			}},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := httppaths(tc.rule)
+			if !reflect.DeepEqual(tc.want, got) {
+				t.Fatalf("expected:\n%v\ngot:\n%v", tc.want, got)
 			}
 		})
 	}
@@ -3525,4 +4106,12 @@ func servicemap(services ...*Service) map[portmeta]*Service {
 		m[s.toMeta()] = s
 	}
 	return m
+}
+
+type statusByNamespaceAndName []Status
+
+func (s statusByNamespaceAndName) Len() int      { return len(s) }
+func (s statusByNamespaceAndName) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+func (s statusByNamespaceAndName) Less(i, j int) bool {
+	return s[i].Object.Namespace+s[i].Object.Name < s[j].Object.Namespace+s[j].Object.Name
 }

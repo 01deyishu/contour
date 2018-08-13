@@ -47,15 +47,20 @@ type VirtualHost struct {
 type TLS struct {
 	// required, the name of a secret in the current namespace
 	SecretName string `json:"secretName"`
+	// Minimum TLS version this vhost should negotiate
+	MinimumProtocolVersion string `json:"minimumProtocolVersion"`
 }
 
 // Route contains the set of routes for a virtual host
 type Route struct {
 	// Match defines the prefix match
 	Match string `json:"match"`
-	// Service are the services to proxy traffic
+	// Services are the services to proxy traffic
 	Services []Service `json:"services"`
+	// Delegate specifies that this route should be delegated to another IngressRoute
 	Delegate `json:"delegate"`
+	// Enables websocket support for the route
+	EnableWebsockets bool `json:"enableWebsockets"`
 }
 
 // Service defines an upstream to proxy traffic to
@@ -73,7 +78,7 @@ type Service struct {
 	Strategy string `json:"strategy"`
 }
 
-// Delegate allows for passing delgating VHosts to other IngressRoutes
+// Delegate allows for delegating VHosts to other IngressRoutes
 type Delegate struct {
 	// Name of the IngressRoute
 	Name string `json:"name"`

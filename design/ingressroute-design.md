@@ -72,6 +72,8 @@ spec:
     tls:
       # required, the name of a secret in the current namespace
       secretName: google-tls
+      # optional: minimum TLS version this vhost should negotiate
+      minimumProtocolVersion: "1.3"
       # other properties like cipher suites may be added later
   strategy: RoundRobin # (Optional) LB Algorithm to apply to all services, defaults for all services
   healthCheck (Optional):
@@ -165,6 +167,13 @@ The following list are the options available to choose from:
 - **Random:** The random load balancer selects a random healthy host
 
 More documentation on Envoy's lb support can be found here: [https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/load_balancing.html](https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/load_balancing.html)
+
+### TLS
+
+- **minimumProtocolVersion**: Define the minimum TLS version a vhost should negotiate. Allowed values:
+  - 1.3
+  - 1.2
+  - 1.1 (Default)
 
 ### Healthcheck
 
@@ -332,7 +341,7 @@ The downside of these proposals is that the minimum use case, the http://hello.w
 Restricting who can create this pair of CRD objects further complicates things and moves toward a design with a third and possibly fourth CRD to apply policy to their counterparts.
 
 Overloading, or making the CRD polymorphic, creates a more complex mental model for complicated deployments, but in exchange scales down to a single CRD containing both the vhost details and the route details, because there is no delegation in the hello world example.
-This property makes the proposed design appealing from a usability standpoint, as **most** ingress use cases are simple--publish my web app on this URL--so it feels right to favour a design that does not penalize the default, simple, use case.
+This property makes the proposed design appealing from a usability standpoint, as **most** ingress use cases are simple--publish my web app on this URL--so it feels right to favor a design that does not penalize the default, simple, use case.
 
 - links to other proposals
 
